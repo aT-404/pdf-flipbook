@@ -8,10 +8,11 @@ import { getSupabaseClient } from '@/lib/supabase/client';
 import { getSupabaseConfigStatus } from '@/lib/supabase/config';
 import { ConfigurationErrorBanner } from '@/components/shared/ConfigurationErrorBanner';
 import { useAuth } from '@/lib/auth/auth-context';
+import { isUserAdmin } from '@/lib/auth/admin-check';
 
 export default function AdminLoginPage() {
   const router = useRouter();
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, loading: authLoading } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -20,11 +21,12 @@ export default function AdminLoginPage() {
 
   const configStatus = getSupabaseConfigStatus();
 
+  // Case D: If already authenticated as admin, redirect to dashboard
   useEffect(() => {
-    if (user && isAdmin) {
+    if (!authLoading && user && isAdmin) {
       router.push('/admin');
     }
-  }, [user, isAdmin, router]);
+  }, [user, isAdmin, authLoading, router]);
 
   if (!configStatus.isConfigured) {
     return <ConfigurationErrorBanner missingVars={configStatus.missingVars} />;
@@ -42,6 +44,7 @@ export default function AdminLoginPage() {
         password,
       });
 
+      // Case A: Wrong password or invalid credentials
       if (authError) {
         setError(authError.message);
         setLoading(false);
@@ -49,7 +52,19 @@ export default function AdminLoginPage() {
       }
 
       if (data.user) {
+        // Case C: Check Admin Authorization
+        const authorized = isUserAdmin(data.user);
+        if (!authorized) {
+          setError('Unauthorized: Your account does not have administrative privileges.');
+          await supabase.auth.signOut();
+          setLoading(false);
+          return;
+        }
+
+        // Case B: Successful login & admin authorization -> navigate to /admin
         router.push('/admin');
+      } else {
+        setLoading(false);
       }
     } catch (err) {
       setError((err as Error).message);
