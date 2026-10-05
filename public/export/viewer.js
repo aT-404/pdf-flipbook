@@ -110,13 +110,13 @@
 
 
   // ---------------------------------------------------------------- page-turn sound
-  // A soft paper sound made with the browser's audio tools (no sound file needed).
+  // A soft, realistic paper sound synthesized with browser Web Audio API.
   var audioContext = null;
   var noiseBuffer = null;
   var lastPlayed = 0;
   function playFlipSound() {
     var now = performance.now();
-    if (now - lastPlayed < 500) return; // one sound per page turn
+    if (now - lastPlayed < 350) return;
     lastPlayed = now;
     try {
       var Ctor = window.AudioContext || window.webkitAudioContext;
@@ -124,37 +124,56 @@
       if (!audioContext) audioContext = new Ctor();
       if (audioContext.state === 'suspended') audioContext.resume();
       if (!noiseBuffer) {
-        noiseBuffer = audioContext.createBuffer(1, Math.floor(audioContext.sampleRate * 0.6), audioContext.sampleRate);
+        noiseBuffer = audioContext.createBuffer(1, Math.floor(audioContext.sampleRate * 0.4), audioContext.sampleRate);
         var data = noiseBuffer.getChannelData(0);
         for (var i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
       }
       var t = audioContext.currentTime;
-      var swish = audioContext.createBufferSource();
-      swish.buffer = noiseBuffer;
+
+      // 1) Primary paper friction rustle
+      var rustle = audioContext.createBufferSource();
+      rustle.buffer = noiseBuffer;
       var band = audioContext.createBiquadFilter();
       band.type = 'bandpass';
-      band.Q.value = 0.8;
-      band.frequency.setValueAtTime(900, t);
-      band.frequency.exponentialRampToValueAtTime(4200, t + 0.28);
-      var swishGain = audioContext.createGain();
-      swishGain.gain.setValueAtTime(0.0001, t);
-      swishGain.gain.exponentialRampToValueAtTime(0.45, t + 0.04);
-      swishGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
-      swish.connect(band); band.connect(swishGain); swishGain.connect(audioContext.destination);
-      swish.start(t, Math.random() * 0.15);
-      swish.stop(t + 0.45);
-      var thud = audioContext.createBufferSource();
-      thud.buffer = noiseBuffer;
-      var low = audioContext.createBiquadFilter();
-      low.type = 'lowpass';
-      low.frequency.value = 420;
-      var thudGain = audioContext.createGain();
-      thudGain.gain.setValueAtTime(0.0001, t + 0.26);
-      thudGain.gain.exponentialRampToValueAtTime(0.3, t + 0.285);
-      thudGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
-      thud.connect(low); low.connect(thudGain); thudGain.connect(audioContext.destination);
-      thud.start(t + 0.26, Math.random() * 0.15);
-      thud.stop(t + 0.45);
+      band.Q.value = 1.1;
+      band.frequency.setValueAtTime(1500, t);
+      band.frequency.exponentialRampToValueAtTime(3200, t + 0.16);
+      var rustleGain = audioContext.createGain();
+      rustleGain.gain.setValueAtTime(0.0001, t);
+      rustleGain.gain.exponentialRampToValueAtTime(0.08, t + 0.03);
+      rustleGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+      rustle.connect(band); band.connect(rustleGain); rustleGain.connect(audioContext.destination);
+      rustle.start(t, Math.random() * 0.1);
+      rustle.stop(t + 0.25);
+
+      // 2) High-frequency paper crispness / flutter
+      var flutter = audioContext.createBufferSource();
+      flutter.buffer = noiseBuffer;
+      var high = audioContext.createBiquadFilter();
+      high.type = 'highpass';
+      high.frequency.value = 2600;
+      var flutterGain = audioContext.createGain();
+      flutterGain.gain.setValueAtTime(0.0001, t + 0.03);
+      flutterGain.gain.exponentialRampToValueAtTime(0.035, t + 0.07);
+      flutterGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.19);
+      flutter.connect(high); flutter.connect(flutterGain); flutterGain.connect(audioContext.destination);
+      flutter.start(t + 0.03, Math.random() * 0.1);
+      flutter.stop(t + 0.25);
+
+      // 3) Gentle paper landing (soft low-mid resting sound)
+      var land = audioContext.createBufferSource();
+      land.buffer = noiseBuffer;
+      var lowMid = audioContext.createBiquadFilter();
+      lowMid.type = 'bandpass';
+      lowMid.Q.value = 1.0;
+      lowMid.frequency.value = 500;
+      var landGain = audioContext.createGain();
+      landGain.gain.setValueAtTime(0.0001, t + 0.12);
+      landGain.gain.exponentialRampToValueAtTime(0.03, t + 0.15);
+      landGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
+      land.connect(lowMid); lowMid.connect(landGain); landGain.connect(audioContext.destination);
+      land.start(t + 0.12, Math.random() * 0.1);
+      land.stop(t + 0.25);
     } catch (e) { /* sound is optional */ }
   }
 
