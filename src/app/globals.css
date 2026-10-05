@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+  background: #0a0a0a;
+}
+
+/* The flipbook should never select text or show a blue tap highlight */
+.stf__parent {
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
