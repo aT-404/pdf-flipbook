@@ -15,3 +15,16 @@ body {
   -webkit-tap-highlight-color: transparent;
   user-select: none;
 }
+
+/* Keep page-flip's wrapper fitted to the viewport box instead of overflowing vertically on wide screens */
+.stf__wrapper {
+  position: relative !important;
+  width: 100% !important;
+  height: 100% !important;
+  padding-bottom: 0 !important;
+}
+
+.stf__block {
+  top: 0;
+  left: 0;
+}
