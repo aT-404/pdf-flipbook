@@ -13,6 +13,9 @@ declare module 'page-flip' {
     update(): void;
     destroy(): void;
     getCurrentPageIndex(): number;
+    getOrientation(): 'portrait' | 'landscape';
+    getBoundsRect(): { left: number; top: number; width: number; pageWidth: number; height: number };
+    getPage(pageIndex: number): { setDensity(density: 'hard' | 'soft'): void };
     on(event: string, callback: (e: FlipEvent) => void): this;
     off(event: string): this;
   }

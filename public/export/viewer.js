@@ -602,10 +602,13 @@
       return index % 2 === 1 ? index - 1 : index;
     }
 
+    var centerBook = function () {};
+
     function report(index) {
       if (!pageFlip) return;
       var idx = toFirstVisible(typeof index === 'number' ? index : pageFlip.getCurrentPageIndex());
       currentIndex = idx;
+      centerBook(idx);
       state.currentPage = idx + 1;
       refreshToolbar();
       // Defer canvas rendering so it does not block the flip animation.
@@ -633,6 +636,7 @@
       refresh: function () {
         if (!pageFlip) return;
         pageFlip.update();
+        centerBook(currentIndex);
         updateVisiblePages(currentIndex + 1);
       },
       destroy: function () {
@@ -663,8 +667,7 @@
         for (var n = 1; n <= total; n++) {
           var pageEl = document.createElement('div');
           pageEl.className = 'page-item';
-          var hard = (coverAlone && n === 1) || (n === total && lastIsAlone);
-          pageEl.setAttribute('data-density', hard ? 'hard' : 'soft');
+          pageEl.setAttribute('data-density', 'soft');
           pageEl.style.cssText = 'background:#fff;overflow:hidden;';
           var canvas = blankCanvas();
           pageEl.appendChild(canvas);
@@ -696,7 +699,31 @@
           flippingTime: reducedMotion ? 0 : 750,
         });
         pageFlip.loadFromHTML(pageElements);
+        pageFlip.getPage(0).setDensity('soft');
+        if (total > 1) pageFlip.getPage(total - 1).setDensity('soft');
         bookEl.style.minWidth = '0px';
+
+        centerBook = function (idx) {
+          if (!pageFlip || !twoPages || pageFlip.getOrientation() !== 'landscape' || total <= 1) {
+            bookEl.style.transform = 'translateX(0px)';
+            return;
+          }
+          var rect = pageFlip.getBoundsRect();
+          var halfPage = (rect && rect.pageWidth ? rect.pageWidth : 0) / 2;
+          if (coverAlone && idx === 0) {
+            bookEl.style.transform = 'translateX(' + (-halfPage) + 'px)';
+          } else if (lastIsAlone && idx === total - 1) {
+            bookEl.style.transform = 'translateX(' + halfPage + 'px)';
+          } else {
+            bookEl.style.transform = 'translateX(0px)';
+          }
+        };
+        centerBook(startIndex);
+        requestAnimationFrame(function () {
+          if (!cancelled) {
+            bookEl.style.transition = reducedMotion ? 'none' : 'transform 350ms ease';
+          }
+        });
         // 'flipping' = the page is turning now (button, key, swipe or drag)
         var dragging = false;
         pageFlip.on('changeState', function (e) {

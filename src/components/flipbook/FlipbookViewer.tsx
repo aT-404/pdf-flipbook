@@ -184,12 +184,15 @@ export const FlipbookViewer = forwardRef<FlipbookRef, Props>(function FlipbookVi
       return index % 2 === 1 ? index - 1 : index;
     };
 
+    let centerBook: (idx: number) => void = () => {};
+
     const report = (index?: number) => {
       if (!pageFlip) return;
       const idx = toFirstVisible(
         typeof index === 'number' ? index : pageFlip.getCurrentPageIndex()
       );
       indexRef.current = idx;
+      centerBook(idx);
       onPageChangeRef.current(idx + 1);
       // Defer canvas rendering so it does not block the flip animation.
       const cb = () => void updateVisiblePages(idx + 1);
@@ -221,8 +224,9 @@ export const FlipbookViewer = forwardRef<FlipbookRef, Props>(function FlipbookVi
         for (let n = 1; n <= totalPages; n++) {
           const el = document.createElement('div');
           el.className = 'page-item';
-          const hard = (coverAlone && n === 1) || (n === totalPages && lastIsAlone);
-          el.setAttribute('data-density', hard ? 'hard' : 'soft');
+          // Use soft density for all pages so the first/last pages curl smoothly
+          // instead of using the 3D hard-cover flip that shoots off-screen.
+          el.setAttribute('data-density', 'soft');
           el.style.cssText = 'background:#fff;overflow:hidden;';
           const canvas = blankCanvas();
           el.appendChild(canvas);
@@ -259,8 +263,40 @@ export const FlipbookViewer = forwardRef<FlipbookRef, Props>(function FlipbookVi
         });
 
         pageFlip.loadFromHTML(pageElements);
+        // page-flip forces 'hard' on lone first/last cover pages during loadFromHTML;
+        // override them back to 'soft' so they curl smoothly without jumping.
+        pageFlip.getPage(0).setDensity('soft');
+        if (totalPages > 1) pageFlip.getPage(totalPages - 1).setDensity('soft');
         book.style.minWidth = '0px';
         pageFlipRef.current = pageFlip;
+
+        // Center the lone first or last page in two-page landscape mode.
+        centerBook = (idx: number) => {
+          if (
+            !pageFlip ||
+            !twoPages ||
+            pageFlip.getOrientation() !== 'landscape' ||
+            totalPages <= 1
+          ) {
+            book.style.transform = 'translateX(0px)';
+            return;
+          }
+          const rect = pageFlip.getBoundsRect();
+          const halfPage = (rect?.pageWidth || 0) / 2;
+          if (coverAlone && idx === 0) {
+            book.style.transform = `translateX(${-halfPage}px)`;
+          } else if (lastIsAlone && idx === totalPages - 1) {
+            book.style.transform = `translateX(${halfPage}px)`;
+          } else {
+            book.style.transform = 'translateX(0px)';
+          }
+        };
+        centerBook(startIndex);
+        requestAnimationFrame(() => {
+          if (!cancelled) {
+            book.style.transition = reducedMotion ? 'none' : 'transform 350ms ease';
+          }
+        });
         // 'flipping' = the page is turning now (button, key, swipe or drag)
         // A button, key or quick swipe says 'flipping' right away. A slower drag
         // only turns when the finger or mouse is released, so we also listen for that.
@@ -280,6 +316,7 @@ export const FlipbookViewer = forwardRef<FlipbookRef, Props>(function FlipbookVi
         syncRef.current = () => report();
         refreshRef.current = () => {
           pageFlip?.update();
+          centerBook(indexRef.current);
           void updateVisiblePages(indexRef.current + 1);
         };
 
