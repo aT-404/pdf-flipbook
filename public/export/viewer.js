@@ -9,6 +9,7 @@
   'use strict';
 
   var MARK = 'https://flipbook.invalid/'; // fake address for files stored inside this page
+  var preRenderedPages = null;
   var KEEP_BEHIND = 7;
   var KEEP_AHEAD = 8;
   var MIN_ZOOM = 0.5;
@@ -456,7 +457,7 @@
     ph.appendChild(closeBtn);
     var grid = el('div', 'grid');
     var jobs = [];
-    var observer = new IntersectionObserver(function (entries) {
+    var observer = preRenderedPages ? null : new IntersectionObserver(function (entries) {
       entries.forEach(function (entry) {
         if (!entry.isIntersecting) return;
         observer.unobserve(entry.target);
@@ -471,11 +472,18 @@
       var t = el('button', 'th' + (n === state.currentPage ? ' cur' : ''),
         '<div class="sp"></div><div class="pic"></div><div class="num">' + n + '</div>');
       t.setAttribute('data-page', String(n));
+      if (preRenderedPages) {
+        var thumbImg = document.createElement('img');
+        thumbImg.src = preRenderedPages[n - 1];
+        thumbImg.decoding = 'async';
+        thumbImg.style.cssText = 'display:block;width:100%;height:100%;object-fit:contain;background:#fff;';
+        t.querySelector('.pic').appendChild(thumbImg);
+      }
       (function (page) {
         t.addEventListener('click', function () { closeDrawer(); if (book) book.goTo(page); });
       })(n);
       grid.appendChild(t);
-      observer.observe(t);
+      if (observer) observer.observe(t);
     }
     panel.appendChild(ph);
     panel.appendChild(grid);
@@ -487,7 +495,7 @@
     drawer = {
       root: root,
       cleanup: function () {
-        observer.disconnect();
+        if (observer) observer.disconnect();
         jobs.forEach(function (j) { j.cancel(); });
       },
     };
@@ -574,6 +582,7 @@
     }
 
     function updateVisiblePages(current) {
+      if (preRenderedPages) return Promise.resolve();
       var min = Math.max(1, current - KEEP_BEHIND);
       var max = Math.min(total, current + KEEP_AHEAD);
       var order = [];
@@ -640,9 +649,13 @@
 
     (async function init() {
       try {
-        var first = await pdf.getPage(1);
-        var vp = first.getViewport({ scale: 1 });
-        ratio = Math.min(3.5, Math.max(0.3, vp.height / vp.width));
+        if (preRenderedPages) {
+          ratio = config.ratio || 1.414;
+        } else {
+          var first = await pdf.getPage(1);
+          var vp = first.getViewport({ scale: 1 });
+          ratio = Math.min(3.5, Math.max(0.3, vp.height / vp.width));
+        }
         if (cancelled) return;
 
         host.replaceChildren();
@@ -657,9 +670,18 @@
           pageEl.className = 'page-item';
           pageEl.setAttribute('data-density', 'soft');
           pageEl.style.cssText = 'background:#fff;overflow:hidden;';
-          var canvas = blankCanvas();
-          pageEl.appendChild(canvas);
-          slots.push(canvas);
+          if (preRenderedPages) {
+            var pageImg = document.createElement('img');
+            pageImg.src = preRenderedPages[n - 1];
+            pageImg.decoding = 'async';
+            pageImg.draggable = false;
+            pageImg.style.cssText = 'display:block;width:100%;height:100%;object-fit:contain;background:#fff;';
+            pageEl.appendChild(pageImg);
+          } else {
+            var canvas = blankCanvas();
+            pageEl.appendChild(canvas);
+            slots.push(canvas);
+          }
           pageElements.push(pageEl);
         }
 
@@ -759,22 +781,24 @@
         currentIndex = startIndex;
         refreshToolbar();
         await updateVisiblePages(startIndex + 1);
-        // Pre-render all remaining pages in the background so every page is ready offline.
-        (async function () {
-          for (var p = 1; p <= total && !cancelled; p++) {
-            if (drawn.has(p) || jobs.has(p)) continue;
-            await new Promise(function (resolve) {
-              if (typeof requestIdleCallback !== 'undefined') {
-                requestIdleCallback(function () { resolve(); }, { timeout: 120 });
-              } else {
-                setTimeout(resolve, 16);
-              }
-            });
-            if (cancelled) break;
-            if (drawn.has(p) || jobs.has(p)) continue;
-            await drawPage(p, Math.min(wantedWidth(), 720));
-          }
-        })();
+        if (!preRenderedPages) {
+          // Pre-render all remaining pages in the background so every page is ready offline.
+          (async function () {
+            for (var p = 1; p <= total && !cancelled; p++) {
+              if (drawn.has(p) || jobs.has(p)) continue;
+              await new Promise(function (resolve) {
+                if (typeof requestIdleCallback !== 'undefined') {
+                  requestIdleCallback(function () { resolve(); }, { timeout: 120 });
+                } else {
+                  setTimeout(resolve, 16);
+                }
+              });
+              if (cancelled) break;
+              if (drawn.has(p) || jobs.has(p)) continue;
+              await drawPage(p, Math.min(wantedWidth(), 720));
+            }
+          })();
+        }
         if (!cancelled && opts.onReady) opts.onReady();
       } catch (err) {
         console.error('Could not start the flipbook', err);
@@ -794,6 +818,22 @@
   // ---------------------------------------------------------------- start up
   async function start() {
     try {
+      var pagesEl = document.getElementById('fb-pages');
+      if (pagesEl) {
+        preRenderedPages = JSON.parse(pagesEl.textContent);
+        pagesEl.textContent = '';
+        state.total = preRenderedPages.length;
+        savePdfBtn.style.display = 'none';
+        refreshToolbar();
+        setZoom(1);
+        book = createBook({
+          twoPages: state.twoPages,
+          coverAlone: state.coverAlone,
+          onReady: function () { overlay.style.display = 'none'; },
+        });
+        return;
+      }
+
       var pdfjsBytes = readBase64('fb-pdfjs');
       var workerBytes = readBase64('fb-worker');
       var files = JSON.parse(document.getElementById('fb-files').textContent);

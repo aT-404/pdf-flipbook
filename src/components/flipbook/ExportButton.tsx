@@ -23,7 +23,6 @@ import { renderPageToCanvas } from '@/lib/pdf/pdf-utils';
 
 interface Props {
   pdf: PDFDocumentProxy;
-  file: File;
   title: string;
   twoPages: boolean;
   coverAlone: boolean;
@@ -50,7 +49,7 @@ function canvasToJpegBlob(canvas: HTMLCanvasElement, quality: number): Promise<B
 }
 
 /** "Download as flipbook": offers HTML-only or Flipbook + cover thumbnail export. */
-export function ExportButton({ pdf, file, title, twoPages, coverAlone, soundOn }: Props) {
+export function ExportButton({ pdf, title, twoPages, coverAlone, soundOn }: Props) {
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
   const [menuOpen, setMenuOpen] = useState(false);
   const running = useRef(false);
@@ -98,7 +97,7 @@ export function ExportButton({ pdf, file, title, twoPages, coverAlone, soundOn }
       }
 
       const htmlBlob = await buildFlipbookBlob(
-        file,
+        pdf,
         { title, twoPages, coverAlone, soundOn, coverDataUrl },
         (fraction) => setStatus({ kind: 'working', percent: Math.round(fraction * 100) })
       );

@@ -15,12 +15,11 @@ const ZOOM_STEP = 0.25;
 
 interface Props {
   pdf: PDFDocumentProxy;
-  file: File;
   title: string;
   onClose: () => void;
 }
 
-export function ReaderScreen({ pdf, file, title, onClose }: Props) {
+export function ReaderScreen({ pdf, title, onClose }: Props) {
   const totalPages = pdf.numPages;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const flipbookRef = useRef<FlipbookRef | null>(null);
@@ -74,7 +73,6 @@ export function ReaderScreen({ pdf, file, title, onClose }: Props) {
         <h1 className="text-sm font-semibold text-neutral-200 line-clamp-1 flex-1">{title}</h1>
         <ExportButton
           pdf={pdf}
-          file={file}
           title={title}
           twoPages={twoPages}
           coverAlone={coverAlone}

@@ -1,7 +1,9 @@
+import type { PDFDocumentProxy } from 'pdfjs-dist';
+import { renderPageToCanvas } from '@/lib/pdf/pdf-utils';
+
 /**
- * Builds ONE self-contained HTML file that holds the PDF, PDF.js, the page-turn
- * library and the viewer. The file works by double-clicking it: no internet,
- * no app, no server.
+ * Builds ONE self-contained HTML file with every page pre-rendered as an image
+ * alongside the page-turn library and viewer. Opens offline with instant page jumps.
  */
 
 export interface ExportSettings {
@@ -16,26 +18,10 @@ function assetUrl(relativePath: string): string {
   return new URL(relativePath, document.baseURI).toString();
 }
 
-async function fetchBytes(relativePath: string): Promise<Uint8Array> {
-  const response = await fetch(assetUrl(relativePath));
-  if (!response.ok) throw new Error(`Missing file: ${relativePath}`);
-  return new Uint8Array(await response.arrayBuffer());
-}
-
 async function fetchText(relativePath: string): Promise<string> {
   const response = await fetch(assetUrl(relativePath));
   if (!response.ok) throw new Error(`Missing file: ${relativePath}`);
   return response.text();
-}
-
-/** Bytes -> base64 text (safe for big arrays) */
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = '';
-  const step = 0x8000;
-  for (let i = 0; i < bytes.length; i += step) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + step));
-  }
-  return btoa(binary);
 }
 
 function escapeHtml(text: string): string {
@@ -48,32 +34,38 @@ function safeInline(text: string): string {
 }
 
 export async function buildFlipbookBlob(
-  file: File,
+  pdf: PDFDocumentProxy,
   settings: ExportSettings,
   onProgress: (fraction: number) => void
 ): Promise<Blob> {
   onProgress(0.02);
-  const [css, viewerJs, pageFlipJs, pdfjsBytes, workerBytes] = await Promise.all([
+  const [css, viewerJs, pageFlipJs, firstPage] = await Promise.all([
     fetchText('export/viewer.css'),
     fetchText('export/viewer.js'),
     fetchText('pdfjs/page-flip.browser.js'),
-    fetchBytes('pdfjs/pdf.min.mjs'),
-    fetchBytes('pdfjs/pdf.worker.min.mjs'),
+    pdf.getPage(1),
   ]);
+  const viewport = firstPage.getViewport({ scale: 1 });
+  const ratio = Math.min(3.5, Math.max(0.3, viewport.height / viewport.width));
+  onProgress(0.06);
 
-  // Image decoders PDF.js may need (scanned pages, special image types)
-  const wasmNames = ['openjpeg.wasm', 'jbig2.wasm', 'qcms_bg.wasm'];
-  const files: Record<string, string> = {};
-  for (const name of wasmNames) {
-    files[`wasm/${name}`] = bytesToBase64(await fetchBytes(`pdfjs/wasm/${name}`));
+  const total = pdf.numPages;
+  const pageDataUrls: string[] = [];
+  for (let n = 1; n <= total; n++) {
+    const canvas = await renderPageToCanvas(pdf, n, 1200).promise;
+    if (!canvas) throw new Error(`Failed to render page ${n}`);
+    pageDataUrls.push(canvas.toDataURL('image/jpeg', 0.85));
+    canvas.width = 0;
+    canvas.height = 0;
+    onProgress(0.06 + 0.9 * (n / total));
   }
-  onProgress(0.1);
 
   const config = JSON.stringify({
     title: settings.title,
     twoPages: settings.twoPages,
     coverAlone: settings.coverAlone,
     soundOn: settings.soundOn,
+    ratio,
   }).replace(/</g, '\\u003c');
 
   const safeTitle = escapeHtml(settings.title);
@@ -87,34 +79,17 @@ export async function buildFlipbookBlob(
     : `<meta property="og:title" content="${safeTitle}">\n` +
       '<meta property="og:description" content="Interactive PDF Flipbook">\n';
 
-  const parts: BlobPart[] = [];
-  parts.push(
+  const parts: BlobPart[] = [
     '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n' +
       '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n' +
       `<title>${safeTitle}</title>\n` +
       coverHeadTags +
       `<style>\n${css}\n</style>\n</head>\n<body>\n<div id="app"></div>\n` +
       `<script id="fb-config" type="application/json">${config}</script>\n` +
-      `<script id="fb-files" type="application/json">${JSON.stringify(files)}</script>\n` +
-      `<script id="fb-pdfjs" type="text/plain">${bytesToBase64(pdfjsBytes)}</script>\n` +
-      `<script id="fb-worker" type="text/plain">${bytesToBase64(workerBytes)}</script>\n` +
-      '<script id="fb-pdf" type="text/plain">'
-  );
-  onProgress(0.2);
-
-  // The PDF itself, in 3 MB pieces so very big files do not freeze the page
-  const chunk = 3 * 1024 * 1024; // multiple of 3 keeps base64 pieces joinable
-  for (let offset = 0; offset < file.size; offset += chunk) {
-    const bytes = new Uint8Array(await file.slice(offset, offset + chunk).arrayBuffer());
-    parts.push(bytesToBase64(bytes));
-    onProgress(0.2 + 0.75 * Math.min(1, (offset + chunk) / file.size));
-  }
-
-  parts.push(
-    '</script>\n' +
+      `<script id="fb-pages" type="application/json">${JSON.stringify(pageDataUrls)}</script>\n` +
       `<script>\n${safeInline(pageFlipJs)}\n</script>\n` +
-      `<script>\n${safeInline(viewerJs)}\n</script>\n</body>\n</html>\n`
-  );
+      `<script>\n${safeInline(viewerJs)}\n</script>\n</body>\n</html>\n`,
+  ];
   onProgress(1);
   return new Blob(parts, { type: 'text/html' });
 }

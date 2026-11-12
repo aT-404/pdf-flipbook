@@ -8,7 +8,6 @@ import { ReaderScreen } from '@/components/flipbook/ReaderScreen';
 
 export default function Home() {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
-  const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -19,7 +18,6 @@ export default function Home() {
     try {
       const doc = await openPdfFile(file);
       setPdf(doc);
-      setFile(file);
       setTitle(file.name.replace(/\.pdf$/i, ''));
     } catch (err) {
       console.error(err);
@@ -36,6 +34,6 @@ export default function Home() {
     };
   }, [pdf]);
 
-  if (!pdf || !file) return <UploadScreen busy={busy} error={error} onFile={openFile} />;
-  return <ReaderScreen pdf={pdf} file={file} title={title} onClose={() => setPdf(null)} />;
+  if (!pdf) return <UploadScreen busy={busy} error={error} onFile={openFile} />;
+  return <ReaderScreen pdf={pdf} title={title} onClose={() => setPdf(null)} />;
 }
