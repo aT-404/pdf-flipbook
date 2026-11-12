@@ -73,6 +73,7 @@ export function ReaderScreen({ pdf, file, title, onClose }: Props) {
         </button>
         <h1 className="text-sm font-semibold text-neutral-200 line-clamp-1 flex-1">{title}</h1>
         <ExportButton
+          pdf={pdf}
           file={file}
           title={title}
           twoPages={twoPages}

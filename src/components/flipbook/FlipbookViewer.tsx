@@ -311,6 +311,35 @@ export const FlipbookViewer = forwardRef<FlipbookRef, Props>(function FlipbookVi
           dragging = false;
         };
         window.addEventListener('pointerup', releaseHandler);
+
+        // Allow quick touch taps (under page-flip's 250ms swipeTimeout) to flip pages.
+        let tapDown: { x: number; y: number; time: number; id: number } | null = null;
+        book.addEventListener('pointerdown', (e) => {
+          if (e.pointerType === 'mouse' || !e.isPrimary) return;
+          tapDown = { x: e.clientX, y: e.clientY, time: performance.now(), id: e.pointerId };
+        });
+        book.addEventListener('pointerup', (e) => {
+          if (!tapDown || e.pointerId !== tapDown.id || e.pointerType === 'mouse') return;
+          const dx = e.clientX - tapDown.x;
+          const dy = e.clientY - tapDown.y;
+          const dt = performance.now() - tapDown.time;
+          tapDown = null;
+          if (dt >= 230 || Math.hypot(dx, dy) > 12 || !pageFlip || pageFlip.getState() !== 'read') {
+            return;
+          }
+          const rect = book.getBoundingClientRect();
+          if (!rect.width || !rect.height) return;
+          const relX = (e.clientX - rect.left) / rect.width;
+          const relY = (e.clientY - rect.top) / rect.height;
+          const corner = relY < 0.5 ? 'top' : 'bottom';
+          const isTwoPage = twoPages && pageFlip.getOrientation() === 'landscape';
+          if (relX < (isTwoPage ? 0.5 : 0.35)) {
+            pageFlip.flipPrev(corner);
+          } else {
+            pageFlip.flipNext(corner);
+          }
+        });
+
         pageFlip.on('flip', (e) => report(typeof e.data === 'number' ? e.data : undefined));
 
         syncRef.current = () => report();

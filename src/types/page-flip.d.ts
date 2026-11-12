@@ -13,6 +13,7 @@ declare module 'page-flip' {
     update(): void;
     destroy(): void;
     getCurrentPageIndex(): number;
+    getState(): string;
     getOrientation(): 'portrait' | 'landscape';
     getBoundsRect(): { left: number; top: number; width: number; pageWidth: number; height: number };
     getPage(pageIndex: number): { setDensity(density: 'hard' | 'soft'): void };

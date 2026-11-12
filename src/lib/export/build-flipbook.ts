@@ -9,6 +9,7 @@ export interface ExportSettings {
   twoPages: boolean;
   coverAlone: boolean;
   soundOn: boolean;
+  coverDataUrl?: string;
 }
 
 function assetUrl(relativePath: string): string {
@@ -75,11 +76,23 @@ export async function buildFlipbookBlob(
     soundOn: settings.soundOn,
   }).replace(/</g, '\\u003c');
 
+  const safeTitle = escapeHtml(settings.title);
+  const coverHeadTags = settings.coverDataUrl
+    ? `<link rel="icon" type="image/jpeg" href="${settings.coverDataUrl}">\n` +
+      `<meta property="og:title" content="${safeTitle}">\n` +
+      '<meta property="og:description" content="Interactive PDF Flipbook">\n' +
+      `<meta property="og:image" content="${settings.coverDataUrl}">\n` +
+      '<meta name="twitter:card" content="summary_large_image">\n' +
+      `<meta name="twitter:image" content="${settings.coverDataUrl}">\n`
+    : `<meta property="og:title" content="${safeTitle}">\n` +
+      '<meta property="og:description" content="Interactive PDF Flipbook">\n';
+
   const parts: BlobPart[] = [];
   parts.push(
     '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n' +
       '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n' +
-      `<title>${escapeHtml(settings.title)}</title>\n` +
+      `<title>${safeTitle}</title>\n` +
+      coverHeadTags +
       `<style>\n${css}\n</style>\n</head>\n<body>\n<div id="app"></div>\n` +
       `<script id="fb-config" type="application/json">${config}</script>\n` +
       `<script id="fb-files" type="application/json">${JSON.stringify(files)}</script>\n` +

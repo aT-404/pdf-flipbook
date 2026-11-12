@@ -736,6 +736,35 @@
           dragging = false;
         };
         window.addEventListener('pointerup', releaseHandler);
+
+        // Allow quick touch taps (under page-flip's 250ms swipeTimeout) to flip pages.
+        var tapDown = null;
+        bookEl.addEventListener('pointerdown', function (e) {
+          if (e.pointerType === 'mouse' || !e.isPrimary) return;
+          tapDown = { x: e.clientX, y: e.clientY, time: performance.now(), id: e.pointerId };
+        });
+        bookEl.addEventListener('pointerup', function (e) {
+          if (!tapDown || e.pointerId !== tapDown.id || e.pointerType === 'mouse') return;
+          var dx = e.clientX - tapDown.x;
+          var dy = e.clientY - tapDown.y;
+          var dt = performance.now() - tapDown.time;
+          tapDown = null;
+          if (dt >= 230 || Math.hypot(dx, dy) > 12 || !pageFlip || pageFlip.getState() !== 'read') {
+            return;
+          }
+          var rect = bookEl.getBoundingClientRect();
+          if (!rect.width || !rect.height) return;
+          var relX = (e.clientX - rect.left) / rect.width;
+          var relY = (e.clientY - rect.top) / rect.height;
+          var corner = relY < 0.5 ? 'top' : 'bottom';
+          var isTwoPage = twoPages && pageFlip.getOrientation() === 'landscape';
+          if (relX < (isTwoPage ? 0.5 : 0.35)) {
+            pageFlip.flipPrev(corner);
+          } else {
+            pageFlip.flipNext(corner);
+          }
+        });
+
         pageFlip.on('flip', function (e) { report(typeof e.data === 'number' ? e.data : undefined); });
 
         state.currentPage = startIndex + 1;
