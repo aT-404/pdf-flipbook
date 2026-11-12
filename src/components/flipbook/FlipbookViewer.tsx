@@ -29,9 +29,9 @@ interface Props {
   onReady: () => void;
 }
 
-// Only pages near the one being read are kept drawn (saves memory on big PDFs)
-const KEEP_BEHIND = 2;
-const KEEP_AHEAD = 4;
+// Keep 7 pages behind and ahead of the current spread ready so flipping never shows blank pages
+const KEEP_BEHIND = 7;
+const KEEP_AHEAD = 8;
 
 const CANVAS_STYLE =
   'display:block;width:100%;height:100%;object-fit:contain;background:#fff;';
@@ -122,8 +122,8 @@ export const FlipbookViewer = forwardRef<FlipbookRef, Props>(function FlipbookVi
       slots[pageNumber - 1] = next;
     };
 
-    const drawPage = (pageNumber: number): Promise<void> => {
-      const want = wantedWidth();
+    const drawPage = (pageNumber: number, targetWidth?: number): Promise<void> => {
+      const want = targetWidth ?? wantedWidth();
       const have = drawn.get(pageNumber);
       if (have && have >= want * 0.8 && have <= want * 1.6) return Promise.resolve();
 
@@ -157,20 +157,6 @@ export const FlipbookViewer = forwardRef<FlipbookRef, Props>(function FlipbookVi
       for (let p = min; p <= max; p++) order.push(p);
       order.sort((a, b) => Math.abs(a - current) - Math.abs(b - current));
       const firstPromises = order.map((p) => drawPage(p));
-
-      // Free pages that are far away
-      for (const p of [...drawn.keys()]) {
-        if (p < min - 2 || p > max + 2) {
-          swapCanvas(p, blankCanvas());
-          drawn.delete(p);
-        }
-      }
-      for (const [p, job] of jobs) {
-        if (p < min - 2 || p > max + 2) {
-          job.cancel();
-          jobs.delete(p);
-        }
-      }
       // Wait for the first 4 pages so blank-on-early-flip is gone.
       return Promise.all(firstPromises.slice(0, 4)).then(() => undefined);
     };
@@ -351,7 +337,27 @@ export const FlipbookViewer = forwardRef<FlipbookRef, Props>(function FlipbookVi
 
         onPageChangeRef.current(startIndex + 1);
         await updateVisiblePages(startIndex + 1);
-        if (!cancelled) onReadyRef.current();
+        if (!cancelled) {
+          onReadyRef.current();
+          // Pre-render all remaining pages in the background so every page is ready offline.
+          const yieldTurn = () =>
+            new Promise<void>((resolve) => {
+              if (typeof requestIdleCallback !== 'undefined') {
+                requestIdleCallback(() => resolve(), { timeout: 120 });
+              } else {
+                setTimeout(resolve, 16);
+              }
+            });
+          void (async () => {
+            for (let p = 1; p <= totalPages && !cancelled; p++) {
+              if (drawn.has(p) || jobs.has(p)) continue;
+              await yieldTurn();
+              if (cancelled) break;
+              if (drawn.has(p) || jobs.has(p)) continue;
+              await drawPage(p, Math.min(wantedWidth(), 720));
+            }
+          })();
+        }
       } catch (err) {
         console.error('Could not start the flipbook:', err);
         if (!cancelled) onReadyRef.current();

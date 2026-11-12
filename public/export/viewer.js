@@ -9,8 +9,8 @@
   'use strict';
 
   var MARK = 'https://flipbook.invalid/'; // fake address for files stored inside this page
-  var KEEP_BEHIND = 2;
-  var KEEP_AHEAD = 4;
+  var KEEP_BEHIND = 7;
+  var KEEP_AHEAD = 8;
   var MIN_ZOOM = 0.5;
   var MAX_ZOOM = 3;
   var ZOOM_STEP = 0.25;
@@ -549,8 +549,8 @@
       slots[pageNumber - 1] = next;
     }
 
-    function drawPage(pageNumber) {
-      var want = wantedWidth();
+    function drawPage(pageNumber, targetWidth) {
+      var want = targetWidth || wantedWidth();
       var have = drawn.get(pageNumber);
       if (have && have >= want * 0.8 && have <= want * 1.6) return Promise.resolve();
       var running = jobs.get(pageNumber);
@@ -579,19 +579,7 @@
       var order = [];
       for (var p = min; p <= max; p++) order.push(p);
       order.sort(function (a, b) { return Math.abs(a - current) - Math.abs(b - current); });
-      var firstPromises = order.map(drawPage);
-      Array.from(drawn.keys()).forEach(function (p) {
-        if (p < min - 2 || p > max + 2) {
-          swapCanvas(p, blankCanvas());
-          drawn.delete(p);
-        }
-      });
-      Array.from(jobs.keys()).forEach(function (p) {
-        if (p < min - 2 || p > max + 2) {
-          jobs.get(p).cancel();
-          jobs.delete(p);
-        }
-      });
+      var firstPromises = order.map(function (p) { return drawPage(p); });
       // Wait for the first 4 pages so blank-on-early-flip is gone.
       return Promise.all(firstPromises.slice(0, 4));
     }
@@ -771,6 +759,22 @@
         currentIndex = startIndex;
         refreshToolbar();
         await updateVisiblePages(startIndex + 1);
+        // Pre-render all remaining pages in the background so every page is ready offline.
+        (async function () {
+          for (var p = 1; p <= total && !cancelled; p++) {
+            if (drawn.has(p) || jobs.has(p)) continue;
+            await new Promise(function (resolve) {
+              if (typeof requestIdleCallback !== 'undefined') {
+                requestIdleCallback(function () { resolve(); }, { timeout: 120 });
+              } else {
+                setTimeout(resolve, 16);
+              }
+            });
+            if (cancelled) break;
+            if (drawn.has(p) || jobs.has(p)) continue;
+            await drawPage(p, Math.min(wantedWidth(), 720));
+          }
+        })();
         if (!cancelled && opts.onReady) opts.onReady();
       } catch (err) {
         console.error('Could not start the flipbook', err);
