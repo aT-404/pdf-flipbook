@@ -2,31 +2,43 @@
  * An ultra-subtle, smooth "paper whisper" sound synthesized using Web Audio API.
  * Designed to feel completely natural, light, and non-distracting.
  */
-export function createFlipSound(): () => void {
+
+type AudioCtorWindow = Window & { webkitAudioContext?: typeof AudioContext };
+
+function getAudioCtor() {
+  return window.AudioContext || (window as unknown as AudioCtorWindow).webkitAudioContext;
+}
+
+export function createFlipSound(): { play: () => void; prime: () => void } {
   let context: AudioContext | null = null;
   let noise: AudioBuffer | null = null;
   let lastPlayed = 0;
 
-  return function play() {
+  /** Create the AudioContext and noise buffer early so the first flip has no lag. */
+  function prime() {
+    try {
+      const Ctor = getAudioCtor();
+      if (!Ctor) return;
+      if (!context) context = new Ctor();
+      if (context.state === 'suspended') void context.resume();
+      if (!noise) {
+        noise = context.createBuffer(1, Math.floor(context.sampleRate * 0.3), context.sampleRate);
+        const data = noise.getChannelData(0);
+        for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+      }
+    } catch {
+      /* sound is optional */
+    }
+  }
+
+  function play() {
     const now = performance.now();
     if (now - lastPlayed < 300) return;
     lastPlayed = now;
 
     try {
-      const Ctor =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-      if (!Ctor) return;
-      if (!context) context = new Ctor();
-      if (context.state === 'suspended') void context.resume();
-
-      if (!noise) {
-        noise = context.createBuffer(1, Math.floor(context.sampleRate * 0.3), context.sampleRate);
-        const data = noise.getChannelData(0);
-        for (let i = 0; i < data.length; i++) {
-          data[i] = Math.random() * 2 - 1;
-        }
-      }
+      prime(); // ensure context + noise exist; no-op if already created
+      if (!context || !noise) return;
 
       const t = context.currentTime;
 
@@ -68,8 +80,12 @@ export function createFlipSound(): () => void {
     } catch {
       /* sound is optional */
     }
-  };
+  }
+
+  return { play, prime };
 }
 
-export const playFlipSound = createFlipSound();
-
+const _sound = createFlipSound();
+/** Call on a user gesture BEFORE the first flip to warm up the AudioContext. */
+export const primeFlipSound = () => _sound.prime();
+export const playFlipSound = () => _sound.play();

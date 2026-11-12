@@ -4,7 +4,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import type { PageFlip } from 'page-flip';
 import { renderPageToCanvas } from '@/lib/pdf/pdf-utils';
-import { playFlipSound } from '@/lib/flip-sound';
+import { playFlipSound, primeFlipSound } from '@/lib/flip-sound';
 
 export interface FlipbookRef {
   next: () => void;
@@ -84,6 +84,24 @@ export const FlipbookViewer = forwardRef<FlipbookRef, Props>(function FlipbookVi
 
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+    // Prime the AudioContext on the first pointer event so the first flip has no lag.
+    const primeOnce = () => {
+      primeFlipSound();
+      host.removeEventListener('pointerdown', primeOnce);
+    };
+    host.addEventListener('pointerdown', primeOnce);
+
+    // Re-center and redraw on window resize (important when zoomed in).
+    const onResize = () => {
+      refreshRef.current();
+      const scroller = scrollRef.current;
+      if (scroller) {
+        scroller.scrollLeft = (scroller.scrollWidth - scroller.clientWidth) / 2;
+        scroller.scrollTop = (scroller.scrollHeight - scroller.clientHeight) / 2;
+      }
+    };
+    window.addEventListener('resize', onResize);
+
     // How many pixels wide a page should be drawn so it looks sharp but not heavy
     const wantedWidth = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -153,7 +171,8 @@ export const FlipbookViewer = forwardRef<FlipbookRef, Props>(function FlipbookVi
           jobs.delete(p);
         }
       }
-      return Promise.all(firstPromises.slice(0, 2)).then(() => undefined);
+      // Wait for the first 4 pages so blank-on-early-flip is gone.
+      return Promise.all(firstPromises.slice(0, 4)).then(() => undefined);
     };
 
     // Two-page spreads: with a lone cover they are [1] [2|3] [4|5] ... so the first
@@ -172,7 +191,13 @@ export const FlipbookViewer = forwardRef<FlipbookRef, Props>(function FlipbookVi
       );
       indexRef.current = idx;
       onPageChangeRef.current(idx + 1);
-      void updateVisiblePages(idx + 1);
+      // Defer canvas rendering so it does not block the flip animation.
+      const cb = () => void updateVisiblePages(idx + 1);
+      if (typeof requestIdleCallback !== 'undefined') {
+        requestIdleCallback(cb, { timeout: 300 });
+      } else {
+        setTimeout(cb, 0);
+      }
     };
 
     const init = async () => {
@@ -271,6 +296,8 @@ export const FlipbookViewer = forwardRef<FlipbookRef, Props>(function FlipbookVi
 
     return () => {
       cancelled = true;
+      host.removeEventListener('pointerdown', primeOnce);
+      window.removeEventListener('resize', onResize);
       if (releaseHandler) window.removeEventListener('pointerup', releaseHandler);
       jobs.forEach((job) => job.cancel());
       jobs.clear();
@@ -322,7 +349,12 @@ export const FlipbookViewer = forwardRef<FlipbookRef, Props>(function FlipbookVi
   }));
 
   return (
-    <div ref={scrollRef} className="w-full h-full overflow-auto select-none flex">
+    // overflow-hidden when zoom=1 so hard-cover 3-D animation never triggers a scrollbar shift.
+    // overflow-auto when zoomed in so the user can pan the enlarged book.
+    <div
+      ref={scrollRef}
+      className={`w-full h-full ${zoom > 1 ? 'overflow-auto' : 'overflow-hidden'} select-none flex`}
+    >
       <div
         ref={hostRef}
         className="shrink-0 m-auto"
@@ -331,7 +363,8 @@ export const FlipbookViewer = forwardRef<FlipbookRef, Props>(function FlipbookVi
           height: `${zoom * 100}%`,
           padding: '56px 12px 80px', // room for the top bar and the toolbar
           boxSizing: 'border-box',
-          touchAction: 'pan-y',
+          // pan-y only when zoomed so a vertical swipe doesn't scroll at zoom=1.
+          touchAction: zoom > 1 ? 'pan-y' : 'none',
         }}
       />
     </div>

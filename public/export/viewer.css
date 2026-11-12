@@ -12,8 +12,9 @@ svg{display:block}
 @media (max-width:639px){.hdr .pill span{display:none}}
 
 /* book area */
-.scroll{position:absolute;inset:0;overflow:auto;display:flex;user-select:none;-webkit-user-select:none}
-.host{flex-shrink:0;margin:auto;padding:56px 12px 80px;touch-action:pan-y}
+/* overflow and touch-action are set dynamically by setZoom() — these are the zoom=1 defaults */
+.scroll{position:absolute;inset:0;overflow:hidden;display:flex;user-select:none;-webkit-user-select:none}
+.host{flex-shrink:0;margin:auto;padding:56px 12px 80px;touch-action:none}
 .stf__parent{-webkit-tap-highlight-color:transparent;user-select:none}
 
 /* loading / error */

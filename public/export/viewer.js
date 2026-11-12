@@ -92,7 +92,8 @@
 
   // The same trick, but inside PDF.js's background worker
   function workerPatch(mark, files) {
-    var original = self.fetch.bind(self);
+    // Guard: older environments may not have fetch in the worker scope.
+    var original = self.fetch ? self.fetch.bind(self) : null;
     self.fetch = function (input, init) {
       var url = typeof input === 'string' ? input : (input && input.url) || '';
       var at = url.indexOf(mark);
@@ -104,7 +105,7 @@
         for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
         return Promise.resolve(new Response(bytes, { status: 200 }));
       }
-      return original(input, init);
+      return original ? original(input, init) : Promise.reject(new Error('fetch unavailable'));
     };
   }
 
@@ -114,6 +115,24 @@
   var audioContext = null;
   var noiseBuffer = null;
   var lastPlayed = 0;
+
+  /** Prime the AudioContext on the first user gesture so the first flip has no lag. */
+  function primeAudioContext() {
+    try {
+      var Ctor = window.AudioContext || window.webkitAudioContext;
+      if (!Ctor || audioContext) return;
+      audioContext = new Ctor();
+      if (audioContext.state === 'suspended') audioContext.resume();
+      noiseBuffer = audioContext.createBuffer(1, Math.floor(audioContext.sampleRate * 0.3), audioContext.sampleRate);
+      var d = noiseBuffer.getChannelData(0);
+      for (var i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    } catch (e) {}
+  }
+  document.addEventListener('pointerdown', function primeOnce() {
+    document.removeEventListener('pointerdown', primeOnce);
+    primeAudioContext();
+  });
+
   function playFlipSound() {
     var now = performance.now();
     if (now - lastPlayed < 300) return;
@@ -156,7 +175,7 @@
       cushionGain.gain.setValueAtTime(0.0001, t + 0.02);
       cushionGain.gain.linearRampToValueAtTime(0.008, t + 0.06);
       cushionGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
-      cushion.connect(low); cushion.connect(cushionGain); cushionGain.connect(audioContext.destination);
+      cushion.connect(low); low.connect(cushionGain); cushionGain.connect(audioContext.destination);
       cushion.start(t + 0.02, Math.random() * 0.1);
       cushion.stop(t + 0.18);
     } catch (e) { /* sound is optional */ }
@@ -392,6 +411,11 @@
     state.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
     host.style.width = state.zoom * 100 + '%';
     host.style.height = state.zoom * 100 + '%';
+    // overflow-hidden at zoom=1 so hard-cover 3-D animation never triggers a scrollbar shift.
+    // overflow-auto when zoomed so the user can pan the enlarged book.
+    scroll.style.overflow = state.zoom > 1 ? 'auto' : 'hidden';
+    // pan-y only when zoomed so a vertical swipe doesn't scroll at zoom=1.
+    host.style.touchAction = state.zoom > 1 ? 'pan-y' : 'none';
     refreshToolbar();
     requestAnimationFrame(function () {
       if (book) book.refresh();
@@ -400,6 +424,17 @@
     });
     setTimeout(function () { if (book) book.refresh(); }, 250);
   }
+
+  // Re-center when the window is resized (important when zoomed in).
+  window.addEventListener('resize', function () {
+    requestAnimationFrame(function () {
+      if (book) book.refresh();
+      if (state.zoom > 1) {
+        scroll.scrollLeft = (scroll.scrollWidth - scroll.clientWidth) / 2;
+        scroll.scrollTop = (scroll.scrollHeight - scroll.clientHeight) / 2;
+      }
+    });
+  });
 
   // ----- thumbnails
   var drawer = null;
@@ -557,7 +592,8 @@
           jobs.delete(p);
         }
       });
-      return Promise.all(firstPromises.slice(0, 2));
+      // Wait for the first 4 pages so blank-on-early-flip is gone.
+      return Promise.all(firstPromises.slice(0, 4));
     }
 
     function toFirstVisible(index) {
@@ -572,7 +608,11 @@
       currentIndex = idx;
       state.currentPage = idx + 1;
       refreshToolbar();
-      updateVisiblePages(idx + 1);
+      // Defer canvas rendering so it does not block the flip animation.
+      var defer = typeof requestIdleCallback !== 'undefined'
+        ? function(cb) { requestIdleCallback(cb, { timeout: 300 }); }
+        : function(cb) { setTimeout(cb, 0); };
+      defer(function() { updateVisiblePages(idx + 1); });
     }
 
     var api = {
@@ -729,12 +769,15 @@
 
       savePdfBtn.addEventListener('click', async function () {
         var bytes = await pdf.getData();
+        var blobUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
         var a = document.createElement('a');
-        a.href = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+        a.href = blobUrl;
         a.download = (config.title || 'document') + '.pdf';
         document.body.appendChild(a);
         a.click();
         a.remove();
+        // Revoke after a short delay so the browser can start the download first.
+        setTimeout(function () { URL.revokeObjectURL(blobUrl); }, 1000);
       });
 
       refreshToolbar();
