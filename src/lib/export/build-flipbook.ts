@@ -134,3 +134,8 @@ export function flipbookFileName(title: string): string {
   const clean = title.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'flipbook';
   return `${clean} (flipbook).html`;
 }
+
+export function coverFileName(title: string): string {
+  const clean = title.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'flipbook';
+  return `${clean} (cover).jpg`;
+}
