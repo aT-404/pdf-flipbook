@@ -220,7 +220,12 @@
 
   // ---------------------------------------------------------------- app
   var app = document.getElementById('app');
+  function shouldShowSinglePage() {
+    return window.innerWidth < 768 && window.innerHeight > window.innerWidth;
+  }
   var state = {
+    userTwoPages: config.twoPages !== false,
+    twoPages: shouldShowSinglePage() ? false : (config.twoPages !== false),
     twoPages: config.twoPages !== false,
     coverAlone: config.coverAlone !== false,
     soundOn: config.soundOn !== false,
