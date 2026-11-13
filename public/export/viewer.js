@@ -694,9 +694,9 @@
           // page-flip picks one vs two pages from minWidth. We decide ourselves,
           // so in one-page mode minWidth is huge and its side effect is undone below.
           minWidth: twoPages ? 100 : 5000,
-          maxWidth: 1600,
+          maxWidth: 4000,
           minHeight: 200,
-          maxHeight: 2600,
+          maxHeight: 4000,
           maxShadowOpacity: 0.5,
           showCover: coverAlone,
           mobileScrollSupport: false,

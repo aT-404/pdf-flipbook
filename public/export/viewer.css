@@ -14,7 +14,10 @@ svg{display:block}
 /* book area */
 /* overflow and touch-action are set dynamically by setZoom() — these are the zoom=1 defaults */
 .scroll{position:absolute;inset:0;overflow:hidden;display:flex;user-select:none;-webkit-user-select:none}
-.host{flex-shrink:0;margin:auto;padding:56px 12px 80px;touch-action:none}
+.host{flex-shrink:0;margin:auto;padding:56px 12px 80px;touch-action:none;transition:padding .2s ease}
+body.is-fullscreen .host{padding:20px 8px 60px}
+body.is-fullscreen .hdr{opacity:0;pointer-events:none;transition:opacity .25s ease}
+body.is-fullscreen:hover .hdr{opacity:1;pointer-events:auto}
 .stf__parent{-webkit-tap-highlight-color:transparent;user-select:none}
 .stf__wrapper{position:relative !important;width:100% !important;height:100% !important;padding-bottom:0 !important}
 .stf__block{top:0;left:0}
